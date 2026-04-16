@@ -4,16 +4,16 @@
 #include <string.h>
 #include <arpa/inet.h>
 
-struct route_table_entry *rtable;
+struct route_table_entry *rtable; //"agenda" cu directiile pe care le poate lua pachetul
 int rtable_len;
 
-struct arp_table_entry *arp_table; //echivalentul lui MAC table din laboratorul 4
+struct arp_table_entry *arp_table; //echivalentul lui MAC table din laboratorul 4, aici se gasesc adresele ip si mac ale fiecarui host si ale celor doua routere
 int arp_table_len;
 
-int main(int argc, char *argv[])
+int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folosesc
 {
-	char buf[MAX_PACKET_LEN];
-	char packet_with_icmp[MAX_PACKET_LEN];
+	char buf[MAX_PACKET_LEN]; //buffer in care extrag toate informatiile primite
+	char packet_with_icmp[MAX_PACKET_LEN]; //buffer in care pun toate informatiile pe care le trimit
 
 	// Do not modify this line
 	init(argv + 2, argc - 2);
@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
 																					//apoi adaugam totul in header-ul IP din aceleasi motive
 
 		if (ntohs(ethernet_header->ethr_type) != 0x0800) { //verifica daca pachetul este IP ca sa nu inghesui alt protocol in sablonul de IP
+			printf("PROBLEMA! Pachetul nu este de tipul IP!!! \n");
 			continue;
 		}
 		//ICMP = Internet Control Message Protocol
@@ -68,51 +69,57 @@ int main(int argc, char *argv[])
 		//deci pentru ICMP am nevoie de inca un "sablon", adica acel icmp_hdr din protocols.h
 
 		//trebuie verificat daca adresa IP destinatie din pachet este egala cu adresa IP a interfetei pe unde a intrat pachetul
+		//daca sunt egale, inseamna ca pachetul voia sa ajunga aici, nu este in tranzit
 		//interfata pe care a intrat pachetul este interface
-		if (ip_header->dest_addr == inet_addr(get_interface_ip(interface))) {
-			struct icmp_hdr *icmp_req = (struct icmp_hdr *)(buf + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+		if (ip_header->dest_addr == inet_addr(get_interface_ip(interface))) { //asta este momentul in care routerul primeste ping
+			struct icmp_hdr *icmp_echo_request = (struct icmp_hdr *)(buf + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 		
-		if (ip_header->proto != 1 || icmp_req->mtype != 8) {
+		if (ip_header->proto != 1 || icmp_echo_request->mtype != 8) { //daca nu este icmp sau daca nu este echo request
+			printf("PROBLEMA! Pachetul nu este ICMP \n");
 			continue;
 		}
 
-		struct ether_hdr *eth_reply = (struct ether_hdr *)packet_with_icmp;
-		struct ip_hdr   *ip_reply  = (struct ip_hdr *)(packet_with_icmp + sizeof(struct ether_hdr));
-		struct icmp_hdr *icmp_reply = (struct icmp_hdr *)(packet_with_icmp + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+		struct ether_hdr *ethernet_echo_reply = (struct ether_hdr *)packet_with_icmp;
+		struct ip_hdr   *ip_echo_reply  = (struct ip_hdr *)(packet_with_icmp + sizeof(struct ether_hdr));
+		struct icmp_hdr *icmp_echo_reply = (struct icmp_hdr *)(packet_with_icmp + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 
-		memcpy(eth_reply->ethr_dhost, ethernet_header->ethr_shost, 6);
-		get_interface_mac(interface, eth_reply->ethr_shost);
-		eth_reply->ethr_type = htons(0x0800);
+		//interschimb in headerul ethernet sursa si destinatia si ii spun ca tipul pachetului este IPv4
+		memcpy(ethernet_echo_reply->ethr_dhost, ethernet_header->ethr_shost, 6); //pentru ca trebuie sa intoarcem un mesaj, destinatia va fi sursa de la care a venit mesajul initial
+		get_interface_mac(interface, ethernet_echo_reply->ethr_shost);
+		ethernet_echo_reply->ethr_type = htons(0x0800);
 
-		ip_reply->ver     = 4;
-		ip_reply->ihl     = 5;
-		ip_reply->tos     = 0;
-		ip_reply->tot_len = ip_header->tot_len;
-		ip_reply->id      = 4;
-		ip_reply->frag    = 0;
-		ip_reply->ttl     = 64;
-		ip_reply->proto   = 1;
-		ip_reply->source_addr = ip_header->dest_addr;
-		ip_reply->dest_addr   = ip_header->source_addr;
-		ip_reply->checksum    = 0;
-		ip_reply->checksum    = htons(checksum((uint16_t *)ip_reply, sizeof(struct ip_hdr)));
+		ip_echo_reply->ver     = 4;
+		ip_echo_reply->ihl     = 5;
+		ip_echo_reply->tos     = 0;
+		ip_echo_reply->tot_len = ip_header->tot_len;
+		ip_echo_reply->id      = 4;
+		ip_echo_reply->frag    = 0;
+		ip_echo_reply->ttl     = 64;
+		ip_echo_reply->proto   = 1;
+		ip_echo_reply->source_addr = ip_header->dest_addr;
+		ip_echo_reply->dest_addr   = ip_header->source_addr;
+		ip_echo_reply->checksum    = 0;
+		ip_echo_reply->checksum    = htons(checksum((uint16_t *)ip_echo_reply, sizeof(struct ip_hdr)));
 
-		size_t icmp_len = len - sizeof(struct ether_hdr) - sizeof(struct ip_hdr);
-		memcpy(icmp_reply, icmp_req, icmp_len);
-		icmp_reply->mtype = 0;
-		icmp_reply->mcode = 0;
-		icmp_reply->check = 0;
-		icmp_reply->check = htons(checksum((uint16_t *)icmp_reply, icmp_len));
+		memcpy(icmp_echo_reply, icmp_echo_request, len - sizeof(struct ether_hdr) - sizeof(struct ip_hdr));
+		icmp_echo_reply->mtype = 0;
+		icmp_echo_reply->mcode = 0;
+		icmp_echo_reply->check = 0;
+		icmp_echo_reply->check = htons(checksum((uint16_t *)icmp_echo_reply, len - sizeof(struct ether_hdr) - sizeof(struct ip_hdr)));
 
-		send_to_link(sizeof(struct ether_hdr) + sizeof(struct ip_hdr) + icmp_len, packet_with_icmp, interface);
-			
+		send_to_link(sizeof(struct ether_hdr) + sizeof(struct ip_hdr) + len - sizeof(struct ether_hdr) - sizeof(struct ip_hdr), packet_with_icmp, interface);
+		
 		continue;
 	}
 
 		//1.2 Verifica checksum:
 		uint16_t checksum_primit = ip_header->checksum;
 		ip_header->checksum = 0;
+
+		//network order = big endian = de la stanga la dreapta (cum vin datele/se duc pe fir)
+		//host order = little endian = de la dreapta la stanga
 		uint16_t suma_recalculata = htons(checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)));
+		//am pus htons la suma recalculata pentru ca suma recalculata trebuie sa plece pe fir, dar eu o calculez normal si astfel este initial in hostorder
 		if(suma_recalculata != checksum_primit) {
 			continue; //daca nu se potriveste suma recalculata cu suma din pachet, inseamna ca e corupt, TRASH
 		}
@@ -163,6 +170,7 @@ int main(int argc, char *argv[])
 			icmp_hdr_ttl->check = 0;
 			icmp_hdr_ttl->check = htons(checksum((uint16_t *)icmp_hdr_ttl, sizeof(struct icmp_hdr) + sizeof(struct ip_hdr) + 8));
 
+			printf("PROBLEMA! Pachetul a mers prea mult prin retea, TTL EXPIRAT \n");
 			send_to_link(sizeof(struct icmp_hdr)+ sizeof(struct ip_hdr) + sizeof(struct ether_hdr) + sizeof(struct ip_hdr) + 8, packet_with_icmp, interface);
 
 			continue; //s-a plimbat prea mult, il aruncam ca face prostii si tine ocupat reteaua
@@ -223,6 +231,7 @@ int main(int argc, char *argv[])
 			icmp_hdr_table->check = 0;
 			icmp_hdr_table->check = htons(checksum((uint16_t *)icmp_hdr_table, sizeof(struct icmp_hdr) + sizeof(struct ip_hdr) + 8));
 
+			printf("PROBLEMA! Nu s-a putut gasi o ruta valida \n");
 			send_to_link(sizeof(struct icmp_hdr)+ sizeof(struct ip_hdr) + sizeof(struct ether_hdr) + sizeof(struct ip_hdr) + 8, packet_with_icmp, interface);
 
 			continue;
@@ -240,6 +249,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (destination_arp == NULL) {
+			printf("PROBLEMA! Nu s-a gasit o adresa de destinatie \n");
 			continue;
 		}
 		
@@ -247,6 +257,7 @@ int main(int argc, char *argv[])
 		get_interface_mac(best_route->interface, ethernet_header->ethr_shost);
 
 		//1.7: Trimiterea noului pachet pe interfata corespunzatoare urmatorului hop
+		printf("VICTORIE! Pachetul a mers mai departe \n");
 		send_to_link(len, buf, best_route->interface);
 	}
 }
