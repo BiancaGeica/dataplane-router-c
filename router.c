@@ -10,6 +10,94 @@ int rtable_len;
 struct arp_table_entry *arp_table; //echivalentul lui MAC table din laboratorul 4, aici se gasesc adresele ip si mac ale fiecarui host si ale celor doua routere
 int arp_table_len;
 
+//Task 2: Trie pentru longest prefix match
+
+typedef struct node {
+	struct node *left;
+	struct node *right;
+	struct route_table_entry *flag; //la sda flagul asta "coloreaza" nodul atunci cand s-a gasit cuvantul, dar mie imi trebuie si interfata care se gaseste in structura asta
+}*Trie, TrieNode;
+
+Trie creareTrie(void) {
+	Trie root = malloc(sizeof(struct node));
+	DIE(root == NULL, "Eroare la crearea triei");
+
+	root->left = NULL;
+	root->right = NULL;
+	root->flag = NULL;
+
+	return root;
+}
+
+Trie inserare(Trie trie, struct route_table_entry *node) {
+	Trie iter = trie;
+
+	int i = 31; //are 32 de biti, deci verific fiecare bit in parte si constuiesc arboree
+	
+	while (i >= 0) {
+		if (((ntohl(node->mask) >> i) & 1) == 0) { //mai trebuiau parantezele la primul operator, inainte de == pt ca == este prioritar fata de &
+			iter->flag = node;
+			break;
+		}
+
+		if (((ntohl(node->prefix) >> i) & 1) == 0) {
+			if (iter->left == NULL) {
+				iter->left = malloc(sizeof(struct node));
+				DIE(iter->left == NULL, "Eroare la alocarea memoriei in trie");
+
+				iter->left->left = NULL;
+				iter->left->right = NULL;
+				iter->left->flag = NULL;
+			}
+
+			iter = iter->left;
+		} else {
+			if (iter->right == NULL) {
+				iter->right = malloc(sizeof(struct node));
+				DIE(iter->right == NULL, "Eroare la alocarea memoriei in trie");
+
+				iter->right->left = NULL;
+				iter->right->right = NULL;
+				iter->right->flag = NULL;
+			}
+
+			iter = iter->right;
+		}
+		i--;
+	}
+
+	return trie;
+}
+
+struct route_table_entry *search(Trie trie, uint32_t ip_dest) {
+	Trie iter = trie;
+	struct route_table_entry *answer = NULL;
+
+	int i = 31;
+	while (i >= 0) {
+		if (iter->flag != NULL) {
+			answer = iter->flag;
+		}
+		if (((ntohl(ip_dest) >> i) & 1) == 0) {
+			if (iter->left == NULL) {
+				break;
+			}
+
+			iter = iter->left;
+		} else {
+			if (iter->right == NULL) {
+				break;
+			}
+
+			iter = iter->right;
+		}
+
+		i--;
+	}
+
+	return answer;
+}
+
 int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folosesc
 {
 	char buf[MAX_PACKET_LEN]; //buffer in care extrag toate informatiile primite
@@ -32,6 +120,10 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 	arp_table_len = parse_arp_table("arp_table.txt", arp_table);
 	DIE(arp_table_len <= 0, "The arp table is empty!!!!");
 
+	Trie root = creareTrie(); //creare trie si popularea ei
+	for (int i = 0; i < rtable_len; i++) {
+		root = inserare(root, &rtable[i]);
+	}
 
 	while (1) {
 
@@ -182,20 +274,24 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 		ip_header->checksum = htons(checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)));
 
 		//1.4 Cautare in tabela de rutare
-		struct route_table_entry *best_route = NULL;
+		/*struct route_table_entry *best_route = NULL;
 
 		for (int i = 0; i < rtable_len; i++) {
-			/*if (rtable[i].prefix == (ip_header->dest_addr & rtable[i].mask)) {
+			if (rtable[i].prefix == (ip_header->dest_addr & rtable[i].mask)) {
 				if (best_route == NULL || rtable[i].mask > best_route->mask) {
 					best_route = &rtable[i];
 				}
-			}*/
+			}
 			if (ntohl(rtable[i].prefix) == (ntohl(ip_header->dest_addr) & ntohl(rtable[i].mask))) {
 				if (best_route == NULL || ntohl(rtable[i].mask) > ntohl(best_route->mask)) {
 					best_route = &rtable[i];
 				}
 			}
-		}
+		}*/
+
+		//Task 2: Longest prefix match eficient:
+		struct route_table_entry *best_route = search(root, ip_header->dest_addr);
+
 		if (best_route == NULL) {
 			struct ether_hdr *ethernet_hdr_icmp_table = (struct ether_hdr *)packet_with_icmp;
 			struct ip_hdr *ip_hdr_icmp_table = (struct ip_hdr *)(packet_with_icmp + sizeof(struct ether_hdr));
