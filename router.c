@@ -360,7 +360,7 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 				//printf("PROBLEMA! Nu s-a gasit o adresa de destinatie \n");
 
 				//3.2 Salvarea pachetului pentru mai tarziu:
-				printf("Nu s-a gasit o adresa destinatie, adaugare in coada ARP-ului....");
+				printf("Nu s-a gasit o adresa destinatie, adaugare in coada ARP-ului.... \n");
 				//queue_enq(coada_asteptare_pachete, buf); nu este ok sa il pun pe buf direct, buf este un pointer la zona aia de memorie unde se primesc ping-urile si mi s-ar rescrie la urmatorul, pierzand informatia utila
 				//pentru a evita suprascrierea, copiez "ping-ul" curent in ceva variabila si o folosesc pe aceea
 				char *copie_ping = (char *)malloc(MAX_PACKET_LEN);
@@ -429,7 +429,7 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 			struct arp_hdr *reply = (struct arp_hdr *)(buf + sizeof(struct ether_hdr));
 
 			if (ntohs(reply->opcode) == 2) { //1 = cerere, 2 = raspuns
-				printf("Am primit un reply");
+				printf("Am primit un reply \n");
 
 				memorie_cache[len_memorie_cache].ip = reply->sprotoa;
 				//shwa = sender hardware address
@@ -452,7 +452,7 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 
 						size_t len_pachet_curent = sizeof(struct ether_hdr) + ntohs(ip_header_curent->tot_len);
 
-						printf("VICTORIE! S-a trimis pachetul ARP");
+						printf("VICTORIE! S-a trimis pachetul ARP \n");
 						send_to_link(len_pachet_curent, pachet_curent, best_route->interface);
 
 						free(pachet_curent);
@@ -469,7 +469,7 @@ int main(int argc, char *argv[]) //argv este util sa stiu ce routing table folos
 		} else if (ntohs(reply->opcode) == 1) { //1 = cerere
 			//atunci cand primesc o cerere, vreau sa vad daca este pentru mine, deci trebuie sa verific daca este ip-ul meu
 			if (reply->tprotoa == inet_addr(get_interface_ip(interface))) {
-				printf("Am primit request pentru ARP!!!");
+				printf("Am primit request pentru ARP!!! \n");
 
 				//pentru a trimite inapoi pachetul, trebuie sa interschimb adresele cum o faceam si la ipv4...ca trebuie sa se intoarca de la mine la cine a trimis initial...logic
 				memcpy(ethernet_header->ethr_dhost, ethernet_header->ethr_shost, 6);
