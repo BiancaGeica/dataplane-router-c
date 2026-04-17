@@ -1,0 +1,48 @@
+Repository for the first homework of the Communication Networks class. In this homework the students will implement the dataplane of a router.
+
+Exercitiul 1: Procesul de dirijare
+
+In captura de ecran de la primul exercitiu se observa trimiterea a 7 pachete ICMP de request si reply in wireshark trimise intre host 3 si host 0.
+
+In ambele terminale ale routerelor apar mesajele de debug care confirma trimiterea pachetelor, iar pentru pachetul care nu are protocolul IPv4, din cauza implementarii codului din momentul rezolvarii primului exercitiu care da drop tuturor pachetelor care nu au acest tip se pot observa erorile aferente. 
+
+Deoarece incerc sa dau ping de la host 3 la host 0, pachetul este forwardat prin ambele routere, daca dau ping de la doua host-uri care sunt conectate la acelasi router se pot observa mesajele de debug doar pe routerul respectiv, deci captura de ecran nu ar fi la fel de sugestiva.
+ls
+Alt detaliu important care se observa in wireshark este campul ttl care ajunge la destinatie cu valoarea 62 (pentru ca a trecut doua hopuri, adica prin cele doua routere) si pleaca cu valoarea intreaga, adica 64.
+
+Pe langa decrementarea TTL-ului, pentru fiecare pachet IPv4 validat si dirijat, am asigurat recalcularea sumei de control (checksum) pentru a nu fi aruncat de retea. De asemenea, la nivelul antetului L2 (Ethernet), am actualizat adresa MAC sursa cu adresa interfetei routerului si adresa MAC destinatie cu adresa urmatorului hop (obtinuta prin ARP), inainte de a trimite pachetul pe fir.
+
+Exercitiul 2: Longest prefix match eficient
+
+Pentru rezolvarea acestui exercitiu, am folosit recomandarea din cerinta de a folosi de o trie.
+
+In cod, am definit o structura pentru acest tip de date, pe care am adaptat-o ca in loc de flag-ul "traditional" sa stocheze un pointer catre locul specific din tabela de rutare. 
+
+Pe langa aceasta structura, am mai proiectat doua functii care sa ma ajute in implementare: inserare si search, dar si un "constructor", adica o functie care sa ma ajute sa initializez structura de date, creand radacina arborelui si care aloca memoria necesara.
+
+Inserare, asa cum ii spune si numele, ma ajuta sa adaug noduri noi in trie, in timp ce search este folosita sa traverseze arborele, iar in cazul in care gaseste un route_table_entry valid, sa il returneze.
+
+Exercitiul 3: Protocolul ARP
+
+Pentru ca in implementarea initiala routerul sarea peste pachetele care aveau protocolul ARP, codul a fost modificat pentru a le acomoda si pe acestea. Logica noua gestioneaza dinamic adresele MAC folosind o "memorie cache", adica un vector de structuri si o coada de asteptare pentru pachete.
+
+In imaginea aferenta exercitiului se observa raspunsul la cereri (ARP requests). Routerul primeste aceste requesturi, verifica daca adresa IP ii apartine, transforma pachetul intr-un reply cu adresa fizica (MAC) a dispozitivului cautat si o transmite inapoi. In poza, primele doua randuri arata hostul 0 care intreaba routerul ce adresa fizica are, iar acesta raspunde cu adresa sa.
+
+Cand routerul trebuie sa dirijeze un pachet IPv4, dar nu stie adresa MAC a urmatorului hop, acesta este adaugat in coada de asteptare, iar routerul trimite la randul lui un ARP pentru a afla adresa MAC respectiva. Acest lucru se poate observa si in mesajele de debug din terminalul routerului, fiind urmat de request-ul routerului care se vede in wireshark.
+
+Cand routerul primeste raspunsul asteptat la requestul pentru adresa MAC, salveaza noua pereche formata din adresa IP si adresa MAC in memoria cache, extrage pachetele si completeaza antetele lor, apoi le trimite pe fir. Acest aspect se observa si in captura de ecran, atunci cand se primeste mesajul "victorie" si liniile 6 si 7 din wireshark ne arata ca pachetul a fost eliberat si trimis la destinatie.
+
+Exercitiul 4:Protocolul ICMP
+
+Rolul protocolului ICMP nu este de a trimite date oferite de utilizator, ci de a transmite mesaje de eroare in cazul unor erori de dirijare. In captura de ecran pentru task-ul 4 (subiectul4.png) se observa foarte clar acest comportament:
+
+-initial, am trimis de pe host 0 doua pachete valide, acest lucru se vede atat in wireshark, unde observam echo request si echo reply, deci pachetele au fost dirijate cu succes
+
+-apoi, am trimis un pachet cu time to live-ul expirat, deci implicit a primit drop, lucru observat in terminalul routerului ca mesaj de debug
+
+-la final, am incercat sa trimit un pachet catre o adresa inexistenta in tabela care nu a putut sa fie gasita in trie, deci pachetul a fost aruncat si s-a afisat mesajul de debug in terminalul routerului.
+
+
+
+
+
