@@ -1,48 +1,55 @@
-Repository for the first homework of the Communication Networks class. In this homework the students will implement the dataplane of a router.
+# Router Dataplane Implementation
 
-Exercitiul 1: Procesul de dirijare
+This repository contains the implementation of a router's dataplane for the first assignment of the Communication Networks course. The project demonstrates core networking functions including IPv4 packet forwarding, Longest Prefix Match (LPM) route lookup via a Trie, dynamic ARP resolution, and ICMP error handling.
 
-In captura de ecran de la primul exercitiu se observa trimiterea a 7 pachete ICMP de request si reply in wireshark trimise intre host 3 si host 0.
+---
 
-In ambele terminale ale routerelor apar mesajele de debug care confirma trimiterea pachetelor, iar pentru pachetul care nu are protocolul IPv4, din cauza implementarii codului din momentul rezolvarii primului exercitiu care da drop tuturor pachetelor care nu au acest tip se pot observa erorile aferente. 
+## Features & Implementation Details
 
-Deoarece incerc sa dau ping de la host 3 la host 0, pachetul este forwardat prin ambele routere, daca dau ping de la doua host-uri care sunt conectate la acelasi router se pot observa mesajele de debug doar pe routerul respectiv, deci captura de ecran nu ar fi la fel de sugestiva.
-ls
-Alt detaliu important care se observa in wireshark este campul ttl care ajunge la destinatie cu valoarea 62 (pentru ca a trecut doua hopuri, adica prin cele doua routere) si pleaca cu valoarea intreaga, adica 64.
+### Exercise 1: IPv4 Packet Forwarding & Routing Process
 
-Pe langa decrementarea TTL-ului, pentru fiecare pachet IPv4 validat si dirijat, am asigurat recalcularea sumei de control (checksum) pentru a nu fi aruncat de retea. De asemenea, la nivelul antetului L2 (Ethernet), am actualizat adresa MAC sursa cu adresa interfetei routerului si adresa MAC destinatie cu adresa urmatorului hop (obtinuta prin ARP), inainte de a trimite pachetul pe fir.
+* **Packet Validation & Processing:** Filters and processes incoming IPv4 packets. Packets non-compliant with the IPv4 protocol are dropped, with appropriate debug logs generated in the router terminal.
+* **TTL Management & Checksum Recalculation:** For every valid forwarded IPv4 packet, the Time To Live (TTL) is decremented. The IP header checksum is recalculated to ensure packets are not dropped downstream due to corruption checks.
+* **L2 Header Updates:** At the Ethernet layer, the source MAC address is updated to the router's outgoing interface MAC address, and the destination MAC address is updated to the next-hop MAC address.
+* **Wireshark Analysis:**
+  * Captures demonstrate ICMP Request and Reply packets forwarded between Host 3 and Host 0 across two router hops.
+  * Packets sent with an initial TTL of 64 arrive at the destination with a TTL of 62, confirming successful processing and decrementing through both router hops.
 
-Exercitiul 2: Longest prefix match eficient
+![Exercise 1 Wireshark Capture](subiect1.png)
 
-Pentru rezolvarea acestui exercitiu, am folosit recomandarea din cerinta de a folosi de o trie.
+---
 
-In cod, am definit o structura pentru acest tip de date, pe care am adaptat-o ca in loc de flag-ul "traditional" sa stocheze un pointer catre locul specific din tabela de rutare. 
+### Exercise 2: Efficient Longest Prefix Match (Trie Data Structure)
 
-Pe langa aceasta structura, am mai proiectat doua functii care sa ma ajute in implementare: inserare si search, dar si un "constructor", adica o functie care sa ma ajute sa initializez structura de date, creand radacina arborelui si care aloca memoria necesara.
+To optimize route table lookups beyond standard linear search, a **Trie (Prefix Tree)** data structure was implemented:
 
-Inserare, asa cum ii spune si numele, ma ajuta sa adaug noduri noi in trie, in timp ce search este folosita sa traverseze arborele, iar in cazul in care gaseste un route_table_entry valid, sa il returneze.
+* **Custom Node Structure:** Modified the standard trie node structure to store pointers directly to routing table entries (`route_table_entry`) instead of boolean flags.
+* **Core Functions:**
+  * `init_trie()` / Constructor: Allocates memory and initializes the tree root.
+  * `insert()`: Populates the Trie with subnets and masks from the routing table.
+  * `search()`: Traverses the bit-level structure of the IP address to find and return the longest matching prefix entry.
 
-Exercitiul 3: Protocolul ARP
+---
 
-Pentru ca in implementarea initiala routerul sarea peste pachetele care aveau protocolul ARP, codul a fost modificat pentru a le acomoda si pe acestea. Logica noua gestioneaza dinamic adresele MAC folosind o "memorie cache", adica un vector de structuri si o coada de asteptare pentru pachete.
+### Exercise 3: Dynamic ARP Protocol & Packet Queueing
 
-In imaginea aferenta exercitiului se observa raspunsul la cereri (ARP requests). Routerul primeste aceste requesturi, verifica daca adresa IP ii apartine, transforma pachetul intr-un reply cu adresa fizica (MAC) a dispozitivului cautat si o transmite inapoi. In poza, primele doua randuri arata hostul 0 care intreaba routerul ce adresa fizica are, iar acesta raspunde cu adresa sa.
+Because static MAC mapping is impractical, the router was upgraded to handle ARP requests and replies dynamically using an **ARP Cache** and a **Packet Queue**:
 
-Cand routerul trebuie sa dirijeze un pachet IPv4, dar nu stie adresa MAC a urmatorului hop, acesta este adaugat in coada de asteptare, iar routerul trimite la randul lui un ARP pentru a afla adresa MAC respectiva. Acest lucru se poate observa si in mesajele de debug din terminalul routerului, fiind urmat de request-ul routerului care se vede in wireshark.
+* **ARP Request Handling:** Upon receiving an ARP request targeting the router's IP address, the router constructs an ARP Reply containing its interface MAC address and sends it back to the requester.
+* **Packet Queueing & Resolution:** 
+  * When forwarding an IPv4 packet whose next-hop MAC address is unknown, the router queues the packet and broadcasts an ARP Request for the target IP.
+  * Once an ARP Reply is received, the IP-MAC pair is stored in the ARP cache, queued packets are retrieved, their Ethernet headers are completed, and they are transmitted onto the wire.
 
-Cand routerul primeste raspunsul asteptat la requestul pentru adresa MAC, salveaza noua pereche formata din adresa IP si adresa MAC in memoria cache, extrage pachetele si completeaza antetele lor, apoi le trimite pe fir. Acest aspect se observa si in captura de ecran, atunci cand se primeste mesajul "victorie" si liniile 6 si 7 din wireshark ne arata ca pachetul a fost eliberat si trimis la destinatie.
+![Exercise 3 Wireshark & Debug Logs](subiect3.png)
 
-Exercitiul 4:Protocolul ICMP
+---
 
-Rolul protocolului ICMP nu este de a trimite date oferite de utilizator, ci de a transmite mesaje de eroare in cazul unor erori de dirijare. In captura de ecran pentru task-ul 4 (subiectul4.png) se observa foarte clar acest comportament:
+### Exercise 4: ICMP Protocol & Error Reporting
 
--initial, am trimis de pe host 0 doua pachete valide, acest lucru se vede atat in wireshark, unde observam echo request si echo reply, deci pachetele au fost dirijate cu succes
+The ICMP protocol implementation handles diagnostic messaging and error reporting for invalid or unroutable packets:
 
--apoi, am trimis un pachet cu time to live-ul expirat, deci implicit a primit drop, lucru observat in terminalul routerului ca mesaj de debug
+* **Echo Request / Reply:** Successfully routed valid ping requests between hosts.
+* **Time Exceeded (TTL Expired):** Packets with a TTL value reaching 0 or 1 are dropped, triggering an ICMP Time Exceeded message back to the sender alongside terminal debug logs.
+* **Destination Unreachable:** If a destination IP cannot be resolved via the Trie lookup, the packet is dropped, and an ICMP Destination Unreachable message is returned.
 
--la final, am incercat sa trimit un pachet catre o adresa inexistenta in tabela care nu a putut sa fie gasita in trie, deci pachetul a fost aruncat si s-a afisat mesajul de debug in terminalul routerului.
-
-
-
-
-
+![Exercise 4 Wireshark Capture](subiect4.png)
